@@ -1,0 +1,3 @@
+[submodule "Submodules/Drawing-to-instrument-list-translator"]
+	path = Submodules/Drawing-to-instrument-list-translator
+	url = https://github.com/ProCrabStination/Drawing-to-instrument-list-translator.git
