@@ -162,6 +162,67 @@ def _auto_name(pdf: str, suffix: str) -> str:
     stem = re.sub(r" - (controls|pids)$", "", Path(pdf).stem)  # saved stage results feed the combine step
     return f"{stem} - {suffix}"
 
+
+def flatten(items):
+    """Every single value inside `items`, however deeply nested in lists/tuples.
+    flatten(["A", ["B", ["C"]]]) -> "A", "B", "C".  flatten("A") -> "A"."""
+    if isinstance(items, (list, tuple)):
+        for item in items:
+            yield from flatten(item)
+    else:
+        yield items
+
+
+def map_nested(func, items):
+    """Call `func` on every single value in `items` and return the results in the SAME nested shape.
+    map_nested(f, ["a", ["b", "c"]]) -> [f("a"), [f("b"), f("c")]].  map_nested(f, "a") -> f("a")."""
+    if isinstance(items, (list, tuple)):
+        return [map_nested(func, item) for item in items]
+    return func(items)
+
+
+EXCEL_EXTENSIONS = (".xlsx", ".xlsm", ".xls")
+
+# Opens the workbook read-only in a hidden Excel and exports every sheet to one PDF.
+# Paths come in through environment variables so spaces, quotes, &, etc. in names are safe.
+_EXCEL_TO_PDF_PS = r"""
+$ErrorActionPreference = 'Stop'
+$xl = New-Object -ComObject Excel.Application
+try {
+    $xl.Visible = $false
+    $xl.DisplayAlerts = $false
+    $wb = $xl.Workbooks.Open($env:XL_SRC, 0, $true)
+    try { $wb.ExportAsFixedFormat(0, $env:XL_DST) } finally { $wb.Close($false) }
+} finally {
+    $xl.Quit()
+    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($xl)
+}
+"""
+
+
+def excel_to_pdf(excel_file, pdf_file=None):
+    """Convert an Excel workbook to PDF using the installed Excel. The PDF goes next to the workbook
+    with the same name unless `pdf_file` is given. Returns the PDF path; raises RuntimeError on failure.
+    `excel_file` may be a nested list; the result is a nested list of PDF paths in the same shape.
+    If `pdf_file` is also given with a list, it must have the same shape."""
+    import subprocess
+    if isinstance(excel_file, (list, tuple)):
+        if pdf_file is None:
+            return map_nested(excel_to_pdf, excel_file)
+        if not isinstance(pdf_file, (list, tuple)) or len(pdf_file) != len(excel_file):
+            raise ValueError("excel_file and pdf_file lists must have the same shape")
+        return [excel_to_pdf(x, p) for x, p in zip(excel_file, pdf_file)]
+    src = Path(excel_file).resolve()
+    dst = Path(pdf_file).resolve() if pdf_file else src.with_suffix(".pdf")
+    env = dict(os.environ, XL_SRC=str(src), XL_DST=str(dst))
+    proc = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _EXCEL_TO_PDF_PS],
+                          env=env, capture_output=True, text=True, timeout=180,
+                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    if proc.returncode != 0 or not dst.is_file():
+        raise RuntimeError((proc.stderr or proc.stdout or "Excel export failed").strip())
+    return dst
+
+
 def run_gui(Function="Welcome", JobFolder=None):
 
     saved = load_settings()
@@ -175,15 +236,15 @@ def run_gui(Function="Welcome", JobFolder=None):
     root.minsize(640, 400)
     root.protocol("WM_DELETE_WINDOW", root.destroy)
 
-    style = ttk.Style()
-    style.configure(".", font=("Segoe UI", 10))
-    style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"))
-    style.configure("Field.TLabel", font=("Segoe UI", 10, "bold"))
-    style.configure("Section.TLabelframe.Label", font=("Segoe UI", 10, "bold"))
-    style.configure("Run.TButton", font=("Segoe UI", 11, "bold"), padding=(18, 8))
-    style.configure("Hint.TLabel", foreground="#9a9a9a")
-    style.configure("Bad.TLabel", foreground="#ff6b6b")
-    style.configure("Good.TLabel", foreground="#5fd38d")
+    # style = ttk.Style()
+    # style.configure(".", font=("Segoe UI", 10))
+    # style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"))
+    # style.configure("Field.TLabel", font=("Segoe UI", 10, "bold"))
+    # style.configure("Section.TLabelframe.Label", font=("Segoe UI", 10, "bold"))
+    # style.configure("Run.TButton", font=("Segoe UI", 11, "bold"), padding=(18, 8))
+    # style.configure("Hint.TLabel", foreground="#9a9a9a")
+    # style.configure("Bad.TLabel", foreground="#ff6b6b")
+    # style.configure("Good.TLabel", foreground="#5fd38d")
 
     # ---- page layout helpers: header at the top, labelled path fields, Cancel/Next pinned bottom-right ----
     # Every page is built into a fresh `page` frame; show_page() throws the old one away first, so the
@@ -239,9 +300,51 @@ def run_gui(Function="Welcome", JobFolder=None):
         if chosen:
             var.set(chosen)
 
-    def latest_pdf(folder: Path, name_contains: str) -> str:
-        """Newest PDF in `folder` whose name contains `name_contains` (empty string if none)."""
-        matches = [f for f in folder.glob("*.pdf") if name_contains in f.name]
+    def browse_excel(var: tk.StringVar) -> None:
+        current = var.get().strip()
+        chosen = filedialog.askopenfilename(filetypes=[("Excel or PDF", "*.xlsx *.xlsm *.xls *.pdf"),
+                                                       ("All files", "*.*")],
+                                            initialdir=str(Path(current).parent) if current else None)
+        if chosen:
+            var.set(chosen)
+
+    def latest_file(folder, name_contains, extensions=(".pdf",)):
+        """Newest file under `folder` (searched recursively) whose name contains any of `name_contains`
+        and whose extension is in `extensions`, ignoring case. Empty string if none.
+        `folder` may be a nested list: you get back a nested list of results in the same shape.
+        `name_contains` and `extensions` may be nested lists: they are flattened into one set of options."""
+        if isinstance(folder, (list, tuple)):       # one search per folder, same shape back
+            return map_nested(lambda one: latest_file(one, name_contains, extensions), folder)
+        folder = Path(folder)
+        if not folder.is_dir():
+            print(f"latest_file: folder not found: {folder}")
+            return ""
+        squash = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())  # ignore case, spaces and punctuation
+        keys = [squash(k) for k in flatten(name_contains)]  # ["TURN", ["DIST"]] -> ["turn", "dist"]
+        exts = {e.lower() for e in flatten(extensions)}     # (".xlsx", [".xls"]) -> {".xlsx", ".xls"}
+        matches = [f for f in folder.rglob("*")  # rglob = recursive: walks every subfolder
+                   if f.is_file() and f.suffix.lower() in exts
+                   and any(k in squash(f.stem) for k in keys)  # name contains ANY of the keys
+                   and not f.name.startswith("~$")]  # ~$ = Office lock files
+        print(f"latest_file: {len(matches)} match(es) for '{name_contains}' {extensions} in {folder}")
+        return str(max(matches, key=lambda f: f.stat().st_mtime)) if matches else ""
+
+    def latest_pdf(folder, name_contains):
+        """Newest PDF in `folder` or any of its subfolders whose name contains any of `name_contains`,
+        ignoring case and punctuation/spaces (so "PI" matches "P&ID", "P-ID", "P ID"). Empty string if none.
+        `folder` may be a nested list (same-shape results back); `name_contains` may be a nested list."""
+        if isinstance(folder, (list, tuple)):       # one search per folder, same shape back
+            return map_nested(lambda one: latest_pdf(one, name_contains), folder)
+        folder = Path(folder)
+        if not folder.is_dir():
+            print(f"latest_pdf: folder not found: {folder}")
+            return ""
+        squash = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())
+        keys = [squash(k) for k in flatten(name_contains)]
+        matches = [f for f in folder.rglob("*")  # rglob = recursive: walks every subfolder
+                   if f.is_file() and f.suffix.lower() == ".pdf"
+                   and any(k in squash(f.stem) for k in keys)]
+        print(f"latest_pdf: {len(matches)} match(es) for '{name_contains}' in {folder} (incl. subfolders)")
         return str(max(matches, key=lambda f: f.stat().st_mtime)) if matches else ""
 
     # ---- validation ----------------------------------------------------------------------------------
@@ -278,23 +381,38 @@ def run_gui(Function="Welcome", JobFolder=None):
     # ---- page 2: confirm the latest P&ID and turn-in PDFs ------------------------------------------
     def parse_page(job_folder: str) -> None:
         print("Entering parse", job_folder)
-        header("Job Folder Files", "These are the latest PDFs found in the job folder. "
-                                   "Check them, or browse to pick different ones.")
+        header("Job Folder Files", "These are the latest P&ID PDF and turn-in (PDF or Excel) found in the job "
+                                   "folder. Check them, or browse to pick different ones. An Excel turn-in "
+                                   "is converted to PDF when you press Next.")
 
         PandIDs = tk.StringVar(value=latest_pdf(Path(job_folder) / "MECHANICAL DRAWINGS", "PI"))
-        TurnIn = tk.StringVar(value=latest_pdf(Path(job_folder) / "ORDER TURN-IN", "TURN"))
+        TurnIn = tk.StringVar(value=latest_file(Path(job_folder) / "ORDER TURN-IN", ["TURN", "DISTRIBUTION"], [".pdf", EXCEL_EXTENSIONS]))
         print("P&ID:", PandIDs.get() or "(none found)")
         print("Turn-in:", TurnIn.get() or "(none found)")
 
         path_field("P&ID latest file", PandIDs, lambda: browse_pdf(PandIDs))
-        path_field("Turn-in latest file", TurnIn, lambda: browse_pdf(TurnIn))
+        path_field("Turn-in latest file", TurnIn, lambda: browse_excel(TurnIn))
 
         def next_() -> None:
             bad = [label for label, var in (("P&ID file", PandIDs), ("Turn-in file", TurnIn)) if not CheckFile(var)]
             if bad:
                 messagebox.showerror("Error", "Not a valid file:\n" + "\n".join(f"• {b}" for b in bad))
                 return  # stay on this page
-            result.update(job_folder=job_folder, pids_pdf=PandIDs.get().strip(), turnin_pdf=TurnIn.get().strip())
+            turnin = Path(TurnIn.get().strip())
+            turnin_pdf = turnin
+            if turnin.suffix.lower() in EXCEL_EXTENSIONS:
+                root.config(cursor="watch")
+                root.update()
+                try:
+                    turnin_pdf = excel_to_pdf(turnin)
+                except Exception as exc:
+                    messagebox.showerror("Error", f"Could not convert the turn-in to PDF:\n{turnin}\n\n{exc}")
+                    return  # stay on this page
+                finally:
+                    root.config(cursor="")
+                print("Turn-in converted:", turnin_pdf)
+            result.update(job_folder=job_folder, pids_pdf=PandIDs.get().strip(),
+                          turnin_file=str(turnin), turnin_pdf=str(turnin_pdf))
             root.destroy()  # last page accepted: close the window and hand the choices back
 
         nav_buttons(next_, on_back=lambda: show_page(lambda: welcome_page(job_folder)))
