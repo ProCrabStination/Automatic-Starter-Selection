@@ -1,0 +1,166 @@
+{
+  "description": "Starter part number code. Each field fills the character positions shown (1-based, inclusive).",
+  "length": 20,
+  "fields": [
+    {
+      "name": "Customer",
+      "positions": [1, 2],
+      "options": {
+        "MY": "Mayekawa"
+      }
+    },
+    {
+      "name": "Compressor",
+      "positions": [3, 3],
+      "options": {
+        "R": "Recip",
+        "S": "Screw"
+      }
+    },
+    {
+      "name": "Drive Type",
+      "positions": [4, 4],
+      "options": {
+        "S": "Soft Starter",
+        "D": "VFD",
+        "B": "VFD with Soft Starter Bypass",
+        "V": "VFD with 1.15SF",
+        "F": "VFD with Soft Starter Bypass and 1.15SF"
+      }
+    },
+    {
+      "name": "Frame",
+      "positions": [5, 5],
+      "options": {
+        "R": "Remote Mount (Rotary Disconnect)",
+        "F": "Remote Mount (Flange Disconnect)"
+      }
+    },
+    {
+      "name": "HP",
+      "positions": [6, 9],
+      "options": {
+        "0040": "40 HP",
+        "0050": "50 HP",
+        "0060": "60 HP",
+        "0075": "75 HP",
+        "0100": "100 HP",
+        "0125": "125 HP",
+        "0150": "150 HP",
+        "0200": "200 HP",
+        "0250": "250 HP",
+        "0300": "300 HP",
+        "0350": "350 HP",
+        "0400": "400 HP",
+        "0450": "450 HP",
+        "0500": "500 HP",
+        "0600": "600 HP",
+        "0700": "700 HP",
+        "0800": "800 HP"
+      }
+    },
+    {
+      "name": "Line Voltage",
+      "positions": [10, 10],
+      "options": {
+        "A": "460/60Hz",
+        "B": "575/60Hz",
+        "C": "380/50Hz",
+        "D": "415/50Hz",
+        "E": "230/60Hz",
+        "F": "208/60Hz",
+        "G": "230/50Hz"
+      }
+    },
+    {
+      "name": "Control Voltage",
+      "positions": [11, 11],
+      "options": {
+        "1": "115 VAC",
+        "2": "230 VAC"
+      }
+    },
+    {
+      "name": "CPT",
+      "positions": [12, 12],
+      "options": {
+        "A": "3KVA",
+        "B": "5KVA",
+        "C": "1KVA"
+      }
+    },
+    {
+      "name": "Oil Pump",
+      "positions": [13, 13],
+      "options": {
+        "0": "None",
+        "2": "1.5 HP @ 1200 RPM",
+        "4": "3.0 HP @ 1800 RPM",
+        "5": "5.0 HP @ 1800 RPM",
+        "6": "7.5 HP @ 1200 RPM",
+        "7": "10 HP @ 1800 RPM"
+      }
+    },
+    {
+      "name": "Heater",
+      "positions": [14, 14],
+      "options": {
+        "0": "No",
+        "1": "Yes"
+      }
+    },
+    {
+      "name": "Motor Speed",
+      "positions": [15, 15],
+      "options": {
+        "1": "3600 RPM",
+        "2": "1800 RPM",
+        "3": "1200 RPM",
+        "4": "3000 RPM",
+        "5": "1500 RPM"
+      }
+    },
+    {
+      "name": "Input Reactor",
+      "positions": [16, 16],
+      "options": {
+        "X": "None",
+        "A": "Line Reactor"
+      }
+    },
+    {
+      "name": "Output Filter",
+      "positions": [17, 17],
+      "options": {
+        "X": "None",
+        "A": "Load Reactor",
+        "B": "DV/DT Filter"
+      }
+    },
+    {
+      "name": "UL Rating",
+      "positions": [18, 18],
+      "options": {
+        "1": "NEMA 1",
+        "2": "NEMA 12",
+        "3": "NEMA 3R*",
+        "4": "NEMA 4",
+        "5": "NEMA 4X"
+      }
+    },
+    {
+      "name": "Future Use 1",
+      "positions": [19, 19],
+      "options": {
+        "0": "None"
+      }
+    },
+    {
+      "name": "Future Use 2",
+      "positions": [20, 20],
+      "options": {
+        "0": "None"
+      }
+    }
+  ]
+}
